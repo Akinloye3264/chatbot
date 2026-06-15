@@ -634,7 +634,7 @@ export default function App() {
               </button>
             </div>
             <div className="help-text">
-              Press Enter to send. Shift+Enter for a new line.
+              <span className="help-hint">Press Enter to send. Shift+Enter for a new line.</span>
               {error ? <span className="error-text"> {error}</span> : null}
             </div>
             <button type="submit" disabled={!canSend} className="send-button">
