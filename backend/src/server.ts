@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import pdfParse from 'pdf-parse';
 import Tesseract from 'tesseract.js';
 
-const rootEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
-config({ path: rootEnvPath });
+const backendEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+config({ path: backendEnvPath });
 
 type ChatRole = 'system' | 'user' | 'assistant';
 
