@@ -16,7 +16,6 @@ type ChatRole = 'system' | 'user' | 'assistant';
 type ChatMessage = {
   role: ChatRole;
   content: string | null;
-  reasoning_details?: unknown;
 };
 
 type ConversationState = {
@@ -86,63 +85,34 @@ async function extractAttachmentText(attachment: AttachmentInput): Promise<Extra
 
   if (attachment.mimeType.startsWith('image/')) {
     const result = await Tesseract.recognize(buffer, 'eng');
-    return {
-      name,
-      mimeType: attachment.mimeType,
-      text: result.data.text.trim(),
-    };
+    return { name, mimeType: attachment.mimeType, text: result.data.text.trim() };
   }
 
   if (attachment.mimeType === 'application/pdf') {
     const result = await pdfParse(buffer);
-    return {
-      name,
-      mimeType: attachment.mimeType,
-      text: result.text.trim(),
-    };
+    return { name, mimeType: attachment.mimeType, text: result.text.trim() };
   }
 
-  if (
-    attachment.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ) {
+  if (attachment.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
     const result = await mammoth.extractRawText({ buffer });
-    return {
-      name,
-      mimeType: attachment.mimeType,
-      text: result.value.trim(),
-    };
+    return { name, mimeType: attachment.mimeType, text: result.value.trim() };
   }
 
   if (attachment.mimeType.startsWith('text/') || attachment.mimeType === 'application/json') {
-    return {
-      name,
-      mimeType: attachment.mimeType,
-      text: buffer.toString('utf8').trim(),
-    };
+    return { name, mimeType: attachment.mimeType, text: buffer.toString('utf8').trim() };
   }
 
-  return {
-    name,
-    mimeType: attachment.mimeType,
-    text: '',
-  };
+  return { name, mimeType: attachment.mimeType, text: '' };
 }
 
 function buildAttachmentContext(attachments: ExtractedAttachment[]): string {
   const chunks = attachments
-    .filter((attachment) => attachment.text.length > 0)
-    .map((attachment, index) => {
-      return [
-        `Attachment ${index + 1}: ${attachment.name}`,
-        `Type: ${attachment.mimeType}`,
-        `Content:`,
-        attachment.text,
-      ].join('\n');
-    });
+    .filter((a) => a.text.length > 0)
+    .map((a, i) =>
+      [`Attachment ${i + 1}: ${a.name}`, `Type: ${a.mimeType}`, `Content:`, a.text].join('\n')
+    );
 
-  if (chunks.length === 0) {
-    return '';
-  }
+  if (chunks.length === 0) return '';
 
   return [
     'The user attached files. Read the following extracted content carefully and use it as evidence:',
@@ -151,7 +121,7 @@ function buildAttachmentContext(attachments: ExtractedAttachment[]): string {
 }
 
 function buildSystemPrompt(projectBrief?: string): string {
-  const basePrompt = [
+  const base = [
     'You are a senior product engineer, architect, and coding assistant.',
     'Handle complex projects by breaking them into phases, surfacing assumptions, and proposing a clear implementation plan before code when the task is large or ambiguous.',
     'If requirements are unclear, ask up to 3 targeted clarifying questions before proceeding.',
@@ -160,16 +130,13 @@ function buildSystemPrompt(projectBrief?: string): string {
     'Be concise for simple requests and more structured for complex projects.',
   ];
 
-  if (!projectBrief?.trim()) {
-    return basePrompt.join('\n');
-  }
+  if (!projectBrief?.trim()) return base.join('\n');
 
-  return [
-    ...basePrompt,
-    '',
-    'Project brief from the user:',
-    projectBrief.trim(),
-  ].join('\n');
+  return [...base, '', 'Project brief from the user:', projectBrief.trim()].join('\n');
+}
+
+function sendEvent(response: express.Response, payload: Record<string, unknown>) {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 app.post('/api/chat', async (request, response) => {
@@ -185,12 +152,7 @@ app.post('/api/chat', async (request, response) => {
   }
 
   const conversation = conversations.get(conversationId) ?? {
-    messages: [
-      {
-        role: 'system',
-        content: buildSystemPrompt(projectBrief),
-      },
-    ],
+    messages: [{ role: 'system' as ChatRole, content: buildSystemPrompt(projectBrief) }],
   };
 
   conversation.messages[0] = {
@@ -204,52 +166,53 @@ app.post('/api/chat', async (request, response) => {
 
   if (!userPrompt.trim()) {
     response.status(400).json({
-      error:
-        'No readable text could be extracted from the uploaded file. Try a clearer image, PDF, DOCX, or text document.',
+      error: 'No readable text could be extracted from the uploaded file.',
     });
     return;
   }
 
-  conversation.messages.push({
-    role: 'user',
-    content: userPrompt,
-  });
+  conversation.messages.push({ role: 'user', content: userPrompt });
+
+  // Switch to SSE streaming
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-cache');
+  response.setHeader('Connection', 'keep-alive');
+  response.flushHeaders();
+
+  let fullContent = '';
 
   try {
-    const apiResponse = await client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       model,
       messages: conversation.messages,
-      reasoning: { enabled: true },
-    } as never);
+      stream: true,
+    } as Parameters<typeof client.chat.completions.create>[0] & { stream: true });
 
-    type ORChatMessage = (typeof apiResponse)['choices'][number]['message'] & {
-      reasoning_details?: unknown;
-    };
-
-    const assistantMessage = apiResponse.choices[0]?.message as ORChatMessage | undefined;
-
-    if (!assistantMessage) {
-      throw new Error('OpenRouter returned no assistant message.');
+    for await (const chunk of stream) {
+      const delta = (chunk.choices[0]?.delta as { content?: string } | undefined)?.content ?? '';
+      if (delta) {
+        fullContent += delta;
+        sendEvent(response, { delta });
+      }
     }
 
-    conversation.messages.push({
-      role: 'assistant',
-      content: assistantMessage.content,
-      reasoning_details: assistantMessage.reasoning_details,
-    });
-
+    conversation.messages.push({ role: 'assistant', content: fullContent });
     conversations.set(conversationId, conversation);
 
-    response.json({
-      conversationId,
-      reply: assistantMessage.content ?? '',
-    });
+    sendEvent(response, { done: true, conversationId });
+    response.end();
   } catch (error) {
     conversation.messages.pop();
     conversations.set(conversationId, conversation);
-    response.status(500).json({
-      error: error instanceof Error ? error.message : 'Request failed',
-    });
+
+    const message = error instanceof Error ? error.message : 'Request failed';
+
+    if (response.headersSent) {
+      sendEvent(response, { error: message });
+      response.end();
+    } else {
+      response.status(500).json({ error: message });
+    }
   }
 });
 

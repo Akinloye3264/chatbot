@@ -52,10 +52,6 @@ type ConversationState = {
   updatedAt: number;
 };
 
-type ChatResponse = {
-  conversationId: string;
-  reply: string;
-};
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 const STORAGE_KEY = 'chatbot-state';
@@ -273,15 +269,12 @@ export default function App() {
     };
 
     setConversations((current) =>
-      current.map((conversation) => {
-        if (conversation.id !== conversationId) {
-          return conversation;
-        }
-
+      current.map((conv) => {
+        if (conv.id !== conversationId) return conv;
         return {
-          ...conversation,
+          ...conv,
           title: nextTitle,
-          messages: [...conversation.messages, userMessage],
+          messages: [...conv.messages, userMessage],
           updatedAt: Date.now(),
         };
       })
@@ -291,20 +284,20 @@ export default function App() {
     setIsLoading(true);
     setError(null);
 
+    const assistantMessageId = makeId();
+
     try {
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId,
           message: trimmed,
           projectBrief: conversationProjectBrief,
-          attachments: attachments.map((attachment) => ({
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            dataUrl: attachment.dataUrl,
+          attachments: attachments.map((a) => ({
+            name: a.name,
+            mimeType: a.mimeType,
+            dataUrl: a.dataUrl,
           })),
         }),
       });
@@ -314,30 +307,97 @@ export default function App() {
         throw new Error(payload?.error ?? 'Request failed');
       }
 
-      const data = (await response.json()) as ChatResponse;
+      if (!response.body) {
+        throw new Error('No response body');
+      }
 
-      const assistantMessage: UiMessage = {
-        id: makeId(),
-        role: 'assistant',
-        content: data.reply,
-      };
-
+      // Add empty assistant message — content will fill in as tokens stream
       setConversations((current) =>
-        current.map((conversation) => {
-          if (conversation.id !== conversationId) {
-            return conversation;
-          }
-
+        current.map((conv) => {
+          if (conv.id !== conversationId) return conv;
           return {
-            ...conversation,
-            id: data.conversationId,
-            messages: [...conversation.messages, assistantMessage],
+            ...conv,
+            messages: [
+              ...conv.messages,
+              { id: assistantMessageId, role: 'assistant' as const, content: '' },
+            ],
             updatedAt: Date.now(),
           };
         })
       );
-      setActiveConversationId(data.conversationId);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalConversationId = conversationId;
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+
+          let parsed: { delta?: string; done?: boolean; conversationId?: string; error?: string };
+          try {
+            parsed = JSON.parse(raw) as typeof parsed;
+          } catch {
+            continue;
+          }
+
+          if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+
+          if (parsed.done) {
+            finalConversationId = parsed.conversationId ?? conversationId;
+            break outer;
+          }
+
+          if (parsed.delta) {
+            setConversations((current) =>
+              current.map((conv) => {
+                if (conv.id !== conversationId) return conv;
+                return {
+                  ...conv,
+                  messages: conv.messages.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: msg.content + parsed.delta }
+                      : msg
+                  ),
+                  updatedAt: Date.now(),
+                };
+              })
+            );
+          }
+        }
+      }
+
+      setActiveConversationId(finalConversationId);
+      if (finalConversationId !== conversationId) {
+        setConversations((current) =>
+          current.map((conv) =>
+            conv.id === conversationId ? { ...conv, id: finalConversationId } : conv
+          )
+        );
+      }
     } catch (caughtError) {
+      // Remove the placeholder assistant message on error
+      setConversations((current) =>
+        current.map((conv) => {
+          if (conv.id !== conversationId) return conv;
+          return {
+            ...conv,
+            messages: conv.messages.filter((msg) => msg.id !== assistantMessageId),
+          };
+        })
+      );
       setError(caughtError instanceof Error ? caughtError.message : 'Something went wrong');
     } finally {
       setIsLoading(false);
@@ -513,7 +573,7 @@ export default function App() {
               ) : null}
             </article>
           ))}
-          {isLoading ? (
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' ? (
             <article className="bubble bubble-assistant">
               <p>Generating response...</p>
             </article>
