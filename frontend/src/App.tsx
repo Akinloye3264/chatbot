@@ -196,16 +196,6 @@ function buildConversationTitle(messageText: string, attachments: ChatAttachment
   return `${sourceText.slice(0, 32).trimEnd()}...`;
 }
 
-function buildConversationPreview(conversation: ConversationState) {
-  const latestMessage = [...conversation.messages].reverse().find((message) => message.content.trim().length > 0);
-  if (!latestMessage) {
-    return DEFAULT_GREETING;
-  }
-
-  const preview = latestMessage.content.replace(/\s+/g, ' ').trim();
-  return preview.length > 54 ? `${preview.slice(0, 54).trimEnd()}...` : preview;
-}
-
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -224,6 +214,7 @@ export default function App() {
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -402,47 +393,36 @@ export default function App() {
   }
 
   function startNewChat() {
-    const nextConversation = createConversation({
-      projectBrief,
-    });
-
+    const nextConversation = createConversation({ projectBrief });
     setConversations((current) => [nextConversation, ...current]);
     setActiveConversationId(nextConversation.id);
     setInput('');
     setPendingAttachments([]);
     setError(null);
+    setSidebarOpen(false);
   }
 
   function selectConversation(conversationId: string) {
-    if (conversationId === activeConversationId) {
-      return;
+    if (conversationId !== activeConversationId) {
+      setActiveConversationId(conversationId);
+      setInput('');
+      setPendingAttachments([]);
+      setError(null);
     }
-
-    setActiveConversationId(conversationId);
-    setInput('');
-    setPendingAttachments([]);
-    setError(null);
-  }
-
-  function updateProjectBrief(nextProjectBrief: string) {
-    setConversations((current) =>
-      current.map((conversation) => {
-        if (conversation.id !== activeConversationId) {
-          return conversation;
-        }
-
-        return {
-          ...conversation,
-          projectBrief: nextProjectBrief,
-          updatedAt: Date.now(),
-        };
-      })
-    );
+    setSidebarOpen(false);
   }
 
   return (
     <main className="shell">
-      <section className="hero sidebar">
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <section className={`hero sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
         <div className="eyebrow">JAY N2 Pro</div>
         <h1>Persistent chat with image and document support.</h1>
 
@@ -450,7 +430,6 @@ export default function App() {
           <button type="button" onClick={startNewChat} className="secondary-button">
             New chat
           </button>
-          <div className="status-pill">Backend: {API_URL}</div>
         </div>
 
         <div className="conversation-section">
@@ -466,35 +445,44 @@ export default function App() {
                 <button
                   key={conversation.id}
                   type="button"
-                  className={`conversation-item ${isActive ? 'active' : ''}`}
+                  className={`conversation-item${isActive ? ' active' : ''}`}
                   onClick={() => selectConversation(conversation.id)}
                   aria-pressed={isActive}
                 >
                   <span className="conversation-item-title">{conversation.title}</span>
-                  <span className="conversation-item-preview">{buildConversationPreview(conversation)}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        <label className="project-brief">
+        <div className="project-brief">
           <span className="label">Project brief</span>
-          <textarea
-            value={projectBrief}
-            onChange={(event) => updateProjectBrief(event.target.value)}
-            placeholder="Describe the product, stack, deadlines, constraints, and the level of detail you want."
-            rows={8}
-          />
-        </label>
+          <p className="project-brief-text">{projectBrief}</p>
+        </div>
       </section>
 
       <section className="chat-panel">
         <header className="chat-header">
-          <div>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen((v) => !v)}
+            aria-label="Toggle sidebar"
+            aria-expanded={sidebarOpen}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <rect y="2" width="18" height="2" rx="1" fill="currentColor" />
+              <rect y="8" width="18" height="2" rx="1" fill="currentColor" />
+              <rect y="14" width="18" height="2" rx="1" fill="currentColor" />
+            </svg>
+          </button>
+
+          <div className="chat-header-title">
             <span className="label">Conversation</span>
             <strong>{activeConversation?.title ?? DEFAULT_NEW_CHAT_TITLE}</strong>
           </div>
+
           <div className={`connection-dot ${isLoading ? 'busy' : 'ready'}`}>
             {isLoading ? 'Thinking' : 'Ready'}
           </div>
