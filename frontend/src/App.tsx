@@ -516,10 +516,6 @@ export default function App() {
           </div>
         </div>
 
-        <div className="project-brief">
-          <span className="label">Project brief</span>
-          <p className="project-brief-text">{projectBrief}</p>
-        </div>
       </section>
 
       <section className="chat-panel">
