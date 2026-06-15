@@ -189,7 +189,7 @@ app.post('/api/chat', async (request, response) => {
     } as Parameters<typeof client.chat.completions.create>[0] & { stream: true });
 
     for await (const chunk of stream) {
-      const delta = (chunk.choices[0]?.delta as { content?: string } | undefined)?.content ?? '';
+      const delta = (chunk.choices?.[0]?.delta as { content?: string } | undefined)?.content ?? '';
       if (delta) {
         fullContent += delta;
         sendEvent(response, { delta });
