@@ -42,7 +42,7 @@ type ExtractedAttachment = {
 };
 
 const apiKey = process.env.GROQ_API_KEY;
-const model = process.env.GROQ_MODEL ?? 'openai/gpt-oss-120b';
+const model = process.env.GROQ_MODEL ?? 'groq/compound';
 const port = Number(process.env.PORT ?? 3001);
 const clientUrl = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
 
@@ -116,19 +116,16 @@ function buildAttachmentContext(attachments: ExtractedAttachment[]): string {
   ].join('\n\n');
 }
 
-function buildSystemPrompt(projectBrief?: string): string {
-  const base = [
-    'You are a senior product engineer, architect, and coding assistant.',
-    'Handle complex projects by breaking them into phases, surfacing assumptions, and proposing a clear implementation plan before code when the task is large or ambiguous.',
-    'If requirements are unclear, ask up to 3 targeted clarifying questions before proceeding.',
-    'When the user asks for code, provide practical, production-ready implementation details.',
-    'When relevant, mention risks, tradeoffs, and testing steps.',
-    'Be concise for simple requests and more structured for complex projects.',
-  ];
-
-  if (!projectBrief?.trim()) return base.join('\n');
-
-  return [...base, '', 'Project brief from the user:', projectBrief.trim()].join('\n');
+function buildSystemPrompt(): string {
+  return [
+    'You are a helpful, knowledgeable general-purpose AI assistant.',
+    'Answer questions from all areas, including everyday life, education, writing, technology, science, business, and creative work.',
+    'Respond naturally and directly to what the user asks. Do not assume the user wants code or turn ordinary questions into programming tutorials.',
+    'Keep simple answers concise. Add structure or detail only when it genuinely makes the answer easier to understand.',
+    'Avoid decorative formatting, excessive headings, long disclaimers, unnecessary examples, and repeated offers for more help.',
+    'If current or live information is unavailable, say so briefly and give the most useful answer possible without inventing facts.',
+    'Ask a clarifying question only when the missing information prevents a useful answer.',
+  ].join('\n');
 }
 
 function sendEvent(response: express.Response, payload: Record<string, unknown>) {
@@ -148,12 +145,12 @@ app.post('/api/chat', async (request, response) => {
   }
 
   const conversation = conversations.get(conversationId) ?? {
-    messages: [{ role: 'system' as ChatRole, content: buildSystemPrompt(projectBrief) }],
+    messages: [{ role: 'system' as ChatRole, content: buildSystemPrompt() }],
   };
 
   conversation.messages[0] = {
     role: 'system',
-    content: buildSystemPrompt(projectBrief),
+    content: buildSystemPrompt(),
   };
 
   const extractedAttachments = await Promise.all(attachments.map(extractAttachmentText));

@@ -35,7 +35,7 @@ npm run dev --workspace frontend
 Backend reads these variables from `backend/.env`:
 
 - `GROQ_API_KEY` required
-- `GROQ_MODEL` optional, defaults to `openai/gpt-oss-120b`
+- `GROQ_MODEL` optional, defaults to `groq/compound`
 - `FRONTEND_ORIGIN` optional, defaults to `http://localhost:5173`
 - `PORT` optional, defaults to `3001`
 

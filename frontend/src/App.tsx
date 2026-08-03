@@ -56,8 +56,8 @@ type ConversationState = {
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 const STORAGE_KEY = 'chatbot-state';
 const DEFAULT_PROJECT_BRIEF =
-  'Build a production-ready chatbot experience. For complex requests, reason in steps, identify assumptions, and propose a clear implementation plan before coding.';
-const DEFAULT_GREETING = 'Ask me anything. I am here for your need.';
+  'A helpful general-purpose assistant for questions and tasks across all areas.';
+const DEFAULT_GREETING = 'Hi! How can I help you today?';
 const DEFAULT_NEW_CHAT_TITLE = 'New chat';
 
 function makeId() {
@@ -483,8 +483,8 @@ export default function App() {
       )}
 
       <section className={`hero sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
-        <div className="eyebrow">JAY N2 Pro</div>
-        <h1>Persistent chat with image and document support.</h1>
+        <div className="eyebrow">JAY AI</div>
+        <h1>Your general-purpose AI assistant.</h1>
 
         <div className="hero-actions">
           <button type="button" onClick={startNewChat} className="secondary-button">
