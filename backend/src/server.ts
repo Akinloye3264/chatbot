@@ -41,16 +41,17 @@ type ExtractedAttachment = {
   text: string;
 };
 
-const apiKey = process.env.OPENAPI;
-const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+const apiKey = process.env.GROQ_API_KEY;
+const model = process.env.GROQ_MODEL ?? 'openai/gpt-oss-120b';
 const port = Number(process.env.PORT ?? 3001);
 const clientUrl = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
 
 if (!apiKey) {
-  throw new Error('Missing OPENAPI in backend/.env.');
+  throw new Error('Missing GROQ_API_KEY in backend/.env.');
 }
 
 const client = new OpenAI({
+  baseURL: 'https://api.groq.com/openai/v1',
   apiKey,
 });
 

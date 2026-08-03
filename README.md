@@ -2,7 +2,7 @@
 
 This workspace is split into two folders:
 
-- `backend`: Express API that talks to OpenAI and streams chat responses
+- `backend`: Express API that talks to Groq and streams chat responses
 - `frontend`: React UI that sends messages to the backend
 
 ## Setup
@@ -13,7 +13,7 @@ Install dependencies from the repository root:
 npm install
 ```
 
-Make sure `backend/.env` contains your OpenAI API key as `OPENAPI`.
+Make sure `backend/.env` contains your Groq API key as `GROQ_API_KEY`.
 
 ## Run
 
@@ -34,8 +34,8 @@ npm run dev --workspace frontend
 
 Backend reads these variables from `backend/.env`:
 
-- `OPENAPI` required
-- `OPENAI_MODEL` optional, defaults to `gpt-4o-mini`
+- `GROQ_API_KEY` required
+- `GROQ_MODEL` optional, defaults to `openai/gpt-oss-120b`
 - `FRONTEND_ORIGIN` optional, defaults to `http://localhost:5173`
 - `PORT` optional, defaults to `3001`
 
