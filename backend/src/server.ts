@@ -41,22 +41,17 @@ type ExtractedAttachment = {
   text: string;
 };
 
-const apiKey = process.env.OPENROUTER_API_KEY;
-const model = process.env.OPENROUTER_MODEL ?? 'nex-agi/nex-n2-pro:free';
+const apiKey = process.env.OPENAPI;
+const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 const port = Number(process.env.PORT ?? 3001);
 const clientUrl = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
 
 if (!apiKey) {
-  throw new Error('Missing OPENROUTER_API_KEY in the environment.');
+  throw new Error('Missing OPENAPI in backend/.env.');
 }
 
 const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
   apiKey,
-  defaultHeaders: {
-    'HTTP-Referer': process.env.OPENROUTER_SITE_URL ?? 'http://localhost',
-    'X-Title': process.env.OPENROUTER_APP_NAME ?? 'chatbot',
-  },
 });
 
 const conversations = new Map<string, ConversationState>();

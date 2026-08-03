@@ -2,7 +2,7 @@
 
 This workspace is split into two folders:
 
-- `backend`: Express API that talks to OpenRouter and preserves `reasoning_details`
+- `backend`: Express API that talks to OpenAI and streams chat responses
 - `frontend`: React UI that sends messages to the backend
 
 ## Setup
@@ -13,7 +13,7 @@ Install dependencies from the repository root:
 npm install
 ```
 
-Make sure your root `.env` contains `OPENROUTER_API_KEY`.
+Make sure `backend/.env` contains your OpenAI API key as `OPENAPI`.
 
 ## Run
 
@@ -32,12 +32,10 @@ npm run dev --workspace frontend
 
 ## Environment
 
-Backend reads these variables from the root `.env`:
+Backend reads these variables from `backend/.env`:
 
-- `OPENROUTER_API_KEY` required
-- `OPENROUTER_MODEL` optional, defaults to `nex-agi/nex-n2-pro:free`
-- `OPENROUTER_SITE_URL` optional
-- `OPENROUTER_APP_NAME` optional
+- `OPENAPI` required
+- `OPENAI_MODEL` optional, defaults to `gpt-4o-mini`
 - `FRONTEND_ORIGIN` optional, defaults to `http://localhost:5173`
 - `PORT` optional, defaults to `3001`
 
