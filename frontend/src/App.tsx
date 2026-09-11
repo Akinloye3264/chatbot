@@ -5,6 +5,7 @@ type ChatAttachment = {
   name: string;
   mimeType: string;
   dataUrl: string;
+  size?: number;
 };
 
 function isImageMimeType(mimeType: string) {
@@ -196,7 +197,7 @@ function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Failed to read image file.'));
+    reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsDataURL(file);
   });
 }
@@ -209,6 +210,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isReadingFiles, setIsReadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -226,7 +228,9 @@ export default function App() {
   const projectBrief = activeConversation?.projectBrief ?? DEFAULT_PROJECT_BRIEF;
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeConversationId, conversations }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeConversationId, conversations }));
+    } catch { setError('Browser storage is full. Recent changes may not survive a reload.'); }
   }, [activeConversationId, conversations]);
 
   useEffect(() => {
@@ -240,13 +244,13 @@ export default function App() {
   }, [messages, isLoading]);
 
   const canSend = useMemo(
-    () => (input.trim().length > 0 || pendingAttachments.length > 0) && !isLoading,
-    [input, pendingAttachments.length, isLoading]
+    () => (input.trim().length > 0 || pendingAttachments.length > 0) && !isLoading && !isReadingFiles,
+    [input, pendingAttachments.length, isLoading, isReadingFiles]
   );
 
   async function sendMessage(messageText: string, attachments: ChatAttachment[]) {
     const trimmed = messageText.trim();
-    if ((!trimmed && attachments.length === 0) || isLoading) {
+    if ((!trimmed && attachments.length === 0) || isLoading || isReadingFiles) {
       return;
     }
 
@@ -264,7 +268,7 @@ export default function App() {
     const userMessage: UiMessage = {
       id: makeId(),
       role: 'user',
-      content: trimmed || '[image attachment]',
+      content: trimmed || '[file attachments]',
       attachments,
     };
 
@@ -422,30 +426,24 @@ export default function App() {
       return;
     }
 
-    const allowedFiles = files.filter((file) => {
-      return (
-        file.type.startsWith('image/') ||
-        file.type === 'application/pdf' ||
-        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        file.type === 'text/plain' ||
-        file.type === 'application/json' ||
-        file.name.endsWith('.md') ||
-        file.name.endsWith('.csv')
-      );
-    });
-
-    const filesToRead = allowedFiles.length > 0 ? allowedFiles : files;
-    const nextAttachments = await Promise.all(
-      filesToRead.map(async (file) => ({
-        id: makeId(),
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        dataUrl: await fileToDataUrl(file),
-      }))
-    );
-
-    setPendingAttachments((current) => [...current, ...nextAttachments]);
-    event.target.value = '';
+    event.currentTarget.value = '';
+    setError(null);
+    setIsReadingFiles(true);
+    try {
+      if (files.length + pendingAttachments.length > 10) throw new Error('Attach at most 10 files per message.');
+      if (files.some(file => file.size > 5 * 1024 * 1024)) throw new Error('Each file must be 5 MB or smaller.');
+      if (files.reduce((sum, file) => sum + file.size, 0) + pendingAttachments.reduce((sum, file) => sum + (file.size ?? 0), 0) > 20 * 1024 * 1024) throw new Error('Attachments must total 20 MB or less.');
+      const nextAttachments = await Promise.all(files.map(async (file) => {
+        const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+        const types: Record<string, string> = { txt: 'text/plain', md: 'text/markdown', csv: 'text/csv', json: 'application/json', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+        const mimeType = types[extension] ?? file.type;
+        if (!mimeType.startsWith('image/') && !mimeType.startsWith('text/') && !Object.values(types).includes(mimeType)) throw new Error('Unsupported file: ' + file.name);
+        return { id: makeId(), name: file.name, mimeType, size: file.size, dataUrl: await fileToDataUrl(file) };
+      }));
+      setPendingAttachments((current) => [...current, ...nextAttachments]);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not read files.');
+    } finally { setIsReadingFiles(false); }
   }
 
   function removeAttachment(id: string) {
@@ -585,7 +583,7 @@ export default function App() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask the model something or add images..."
+            placeholder="Ask something or attach files..."
             rows={3}
           />
 
@@ -620,21 +618,23 @@ export default function App() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,application/json"
+                accept="image/*,application/pdf,.docx,.txt,.md,.csv,application/json"
+                disabled={isLoading || isReadingFiles}
                 multiple
                 className="file-input"
                 onChange={handleFileChange}
               />
               <button
                 type="button"
+                disabled={isLoading || isReadingFiles}
                 onClick={() => fileInputRef.current?.click()}
                 className="secondary-button"
               >
-                Add image or document
+                {isReadingFiles ? 'Reading files...' : `Add files (${pendingAttachments.length}/10)`}
               </button>
             </div>
             <div className="help-text">
-              <span className="help-hint">Press Enter to send. Shift+Enter for a new line.</span>
+              <span className="help-hint">Up to 10 files, 5 MB each, 20 MB total. Enter to send.</span>
               {error ? <span className="error-text"> {error}</span> : null}
             </div>
             <button type="submit" disabled={!canSend} className="send-button">

@@ -15,7 +15,7 @@ type ChatRole = 'system' | 'user' | 'assistant';
 
 type ChatMessage = {
   role: ChatRole;
-  content: string | null;
+  content: string;
 };
 
 type ConversationState = {
@@ -41,19 +41,36 @@ type ExtractedAttachment = {
   text: string;
 };
 
-const apiKey = process.env.GROQ_API_KEY;
+const apiKeys = [...new Set([process.env.GROQ_API_KEY, process.env.GROQ_API_KEY2].map(key => key?.trim()).filter((key): key is string => Boolean(key)))];
 const model = process.env.GROQ_MODEL ?? 'groq/compound';
 const port = Number(process.env.PORT ?? 3001);
 const clientUrl = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
 
-if (!apiKey) {
-  throw new Error('Missing GROQ_API_KEY in backend/.env.');
+if (!apiKeys.length) {
+  throw new Error('Set GROQ_API_KEY or GROQ_API_KEY2 in backend/.env.');
 }
 
-const client = new OpenAI({
+const clients = apiKeys.map(apiKey => new OpenAI({
   baseURL: 'https://api.groq.com/openai/v1',
   apiKey,
-});
+  maxRetries: 0,
+  timeout: 60000,
+}));
+let nextClient = 0;
+
+async function createStream(messages: ChatMessage[]) {
+  const start = nextClient++ % clients.length;
+  for (let attempt = 0; attempt < clients.length; attempt++) {
+    try {
+      return await clients[(start + attempt) % clients.length].chat.completions.create({ model, messages, stream: true });
+    } catch (error) {
+      const status = error instanceof OpenAI.APIError ? error.status : undefined;
+      const retryable = status === undefined || [401, 403, 408, 429].includes(status) || status >= 500;
+      if (!retryable || attempt === clients.length - 1) throw error;
+    }
+  }
+  throw new Error('No API keys available');
+}
 
 const conversations = new Map<string, ConversationState>();
 const app = express();
@@ -63,10 +80,13 @@ app.use(
     origin: clientUrl,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: '30mb' }));
+app.use((error: { status?: number }, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+  response.status(error.status === 413 ? 413 : 400).json({ error: error.status === 413 ? 'Uploads are too large. Use at most 20 MB total.' : 'Invalid JSON request.' });
+});
 
 app.get('/health', (_request, response) => {
-  response.json({ ok: true, model });
+  response.json({ ok: true, model, configuredKeys: clients.length });
 });
 
 function dataUrlToBuffer(dataUrl: string): Buffer {
@@ -134,10 +154,35 @@ function sendEvent(response: express.Response, payload: Record<string, unknown>)
 
 app.post('/api/chat', async (request, response) => {
   const body = request.body as ApiRequestBody;
+  if (!body || (body.message !== undefined && typeof body.message !== 'string') || (body.conversationId !== undefined && typeof body.conversationId !== 'string') || (body.projectBrief !== undefined && typeof body.projectBrief !== 'string')) {
+    response.status(400).json({ error: 'Invalid chat request.' });
+    return;
+  }
   const conversationId = body.conversationId?.trim() || crypto.randomUUID();
   const message = body.message?.trim();
   const projectBrief = body.projectBrief?.trim();
   const attachments = body.attachments ?? [];
+  if (!Array.isArray(attachments) || attachments.length > 10) {
+    response.status(400).json({ error: 'Attach at most 10 files per message.' });
+    return;
+  }
+  let totalBytes = 0;
+  for (const attachment of attachments) {
+    if (!attachment || typeof attachment.mimeType !== 'string' || typeof attachment.dataUrl !== 'string' || (attachment.name !== undefined && typeof attachment.name !== 'string') || !/^data:[^,]*;base64,[A-Za-z0-9+/]*={0,2}$/.test(attachment.dataUrl)) {
+      response.status(400).json({ error: 'Invalid attachment data.' });
+      return;
+    }
+    if (!/^(image\/|text\/)/.test(attachment.mimeType) && !['application/pdf', 'application/json', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(attachment.mimeType)) {
+      response.status(400).json({ error: 'Unsupported file type. Use images, PDF, DOCX, text, Markdown, CSV, or JSON.' });
+      return;
+    }
+    const bytes = dataUrlToBuffer(attachment.dataUrl).length;
+    totalBytes += bytes;
+    if (bytes > 5 * 1024 * 1024 || totalBytes > 20 * 1024 * 1024) {
+      response.status(413).json({ error: 'Use at most 5 MB per file and 20 MB total.' });
+      return;
+    }
+  }
 
   if (!message && attachments.length === 0) {
     response.status(400).json({ error: 'message is required' });
@@ -153,7 +198,17 @@ app.post('/api/chat', async (request, response) => {
     content: buildSystemPrompt(),
   };
 
-  const extractedAttachments = await Promise.all(attachments.map(extractAttachmentText));
+  const extractedAttachments: ExtractedAttachment[] = [];
+  try {
+    for (const attachment of attachments) {
+      const extracted = await extractAttachmentText(attachment);
+      if (!extracted.text) throw new Error('No readable text');
+      extractedAttachments.push(extracted);
+    }
+  } catch {
+    response.status(400).json({ error: 'A file could not be read or contains no extractable text. Check the files and try again.' });
+    return;
+  }
   const attachmentContext = buildAttachmentContext(extractedAttachments);
   const userPrompt = [message, attachmentContext].filter(Boolean).join('\n\n');
 
@@ -175,11 +230,7 @@ app.post('/api/chat', async (request, response) => {
   let fullContent = '';
 
   try {
-    const stream = await client.chat.completions.create({
-      model,
-      messages: conversation.messages,
-      stream: true,
-    } as Parameters<typeof client.chat.completions.create>[0] & { stream: true });
+    const stream = await createStream(conversation.messages);
 
     for await (const chunk of stream) {
       const delta = (chunk.choices?.[0]?.delta as { content?: string } | undefined)?.content ?? '';

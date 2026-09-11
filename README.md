@@ -34,7 +34,8 @@ npm run dev --workspace frontend
 
 Backend reads these variables from `backend/.env`:
 
-- `GROQ_API_KEY` required
+- `GROQ_API_KEY` primary key (at least one key required)
+- `GROQ_API_KEY2` optional second key; requests rotate across distinct configured keys and fall back on authentication, rate-limit, connection, or server errors before streaming starts. Keys in the same Groq organization share its limits.
 - `GROQ_MODEL` optional, defaults to `groq/compound`
 - `FRONTEND_ORIGIN` optional, defaults to `http://localhost:5173`
 - `PORT` optional, defaults to `3001`
@@ -46,6 +47,8 @@ Frontend reads:
 ## Uploads
 
 The chat composer accepts:
+
+Select multiple files together or add more before sending: up to 10 files per message, 5 MB per file, and 20 MB total. Unsupported or unreadable files return an error. Images use OCR; scanned PDFs without a text layer are not supported.
 
 - images such as PNG and JPEG, which are OCR-read on the backend
 - PDFs
