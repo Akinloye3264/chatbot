@@ -5,7 +5,7 @@ export const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 export type Attachment = { id: string; name: string; mimeType: string; size: number; uri: string };
 export type GeneratedImage = { uri: string; prompt: string };
 export type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: GeneratedImage; attachments?: Pick<Attachment, 'id' | 'name' | 'mimeType' | 'size'>[]; failed?: boolean };
-export type Conversation = { id: string; title: string; messages: Message[]; updatedAt: number };
+export type Conversation = { id: string; title: string; messages: Message[]; updatedAt: number; preferences?: import('./preferences').ReplyOptions };
 export type ChatEvent = { delta?: string; done?: boolean; conversationId?: string; error?: string };
 
 export function attachmentMime(name: string, supplied?: string | null): string {

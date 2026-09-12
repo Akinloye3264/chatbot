@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import Markdown from 'react-native-markdown-display';
+import * as Clipboard from 'expo-clipboard';
+import { ReplyBody } from './src/ReplyBody';
+import { conversationText, getOptions, messageText, rememberRequest, type ReplyOptions } from './src/preferences';
 import { Attachment, attachmentMime, Conversation, MAX_FILES, Message, restoreConversations, validateAttachments } from './src/chat';
 import { checkServer, generateImage, removeGeneratedImage, streamChat } from './src/api';
 import { colors as color, markdownStyles, styles } from './src/styles';
@@ -44,6 +46,8 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [notice, setNotice] = useState('');
   const [serverUrl, setServerUrl] = useState(DEFAULT_URL);
   const [serverDraft, setServerDraft] = useState(DEFAULT_URL);
   const [checking, setChecking] = useState(false);
@@ -54,6 +58,7 @@ function AppContent() {
   const followReply = useRef(true);
   const writeQueue = useRef(Promise.resolve());
   const current = chats.find(chat => chat.id === activeId) ?? chats[0];
+  const preferences = getOptions(current?.preferences);
   const locked = busy || picking;
 
   useEffect(() => {
@@ -160,12 +165,13 @@ function AppContent() {
       setError('Describe your image using 1–2048 characters, without attachments.'); return;
     }
     const text = draft.trim(); const files = attachments; const chatId = current.id;
+    const requestPreferences = rememberRequest(text, preferences);
     const userId = id(); const assistantId = id();
     const controller = new AbortController(); requestRef.current = controller;
     setActiveReplyId(assistantId);
     setBusy(true); setError(null); setDraft(''); setAttachments([]); followReply.current = true;
     setChats(previous => previous.map(chat => chat.id !== chatId ? chat : {
-      ...chat, title: chat.messages.length ? chat.title : (text || files[0].name).slice(0, 48), updatedAt: Date.now(),
+      ...chat, preferences: requestPreferences, title: chat.messages.length ? chat.title : (text || files[0].name).slice(0, 48), updatedAt: Date.now(),
       messages: [...chat.messages, { id: userId, role: 'user', content: text, attachments: files.map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size })) }, { id: assistantId, role: 'assistant', content: '' }],
     }));
     let timedOut = false;
@@ -176,7 +182,7 @@ function AppContent() {
         setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: 'Generated image', image } : message) }));
         return;
       }
-      await withAbort(streamChat({ url: serverUrl, conversationId: chatId, message: text, attachments: files, signal: controller.signal,
+      await withAbort(streamChat({ url: serverUrl, conversationId: chatId, message: text, attachments: files, signal: controller.signal, preferences: requestPreferences,
         onDelta: delta => { if (!controller.signal.aborted) setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: message.content + delta } : message) })); },
       }), controller.signal);
     } catch (caught) {
@@ -196,6 +202,27 @@ function AppContent() {
       setServerUrl(url); setServerDraft(url); setServerNotice('Connected. Your server is ready.');
     } catch { setServerNotice('Could not connect. Check the URL and try again. A sleeping server may need a moment to wake up.'); }
     finally { setChecking(false); }
+  }
+
+  function updatePreferences(patch: Partial<ReplyOptions>) {
+    if (locked || !current) return;
+    setChats(previous => previous.map(chat => chat.id === current.id ? { ...chat, preferences: { ...getOptions(chat.preferences), ...patch } } : chat));
+  }
+  async function copyText(text: string) {
+    try {
+      if (!await Clipboard.setStringAsync(text)) throw new Error('Clipboard unavailable');
+      setNotice('Copied to clipboard.');
+    } catch { setError('Could not copy text. Try selecting the text manually.'); }
+  }
+  async function shareConversation() {
+    if (!current) return;
+    const text = conversationText(current);
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.share) await navigator.share({ title: current.title, text });
+        else { await copyText(text); setNotice('Sharing is unavailable in this browser. Conversation copied instead.'); }
+      } else await Share.share({ title: current.title, message: text });
+    } catch (caught) { if (!(caught instanceof Error && caught.name === 'AbortError')) setError('Could not open sharing. Use Copy conversation instead.'); }
   }
 
   function retryReply(messageId: string) {
@@ -232,6 +259,7 @@ function AppContent() {
           <View style={styles.headerTitle}><Text style={styles.brand}>JAY AI</Text><Text style={styles.headerSubtitle} numberOfLines={1}>{current?.messages.length ? current.title : 'Your everyday thinking companion'}</Text></View>
           <IconButton icon="create-outline" label="New conversation" disabled={locked} onPress={startChat} />
           <IconButton icon="options-outline" label="Connection settings" disabled={locked} onPress={() => { setServerDraft(serverUrl); setServerNotice(''); setSettingsOpen(true); }} />
+          <IconButton icon="ellipsis-vertical" label="Conversation options" disabled={locked} onPress={() => setOptionsOpen(true)} />
         </View>
         <FlatList key={current?.id} ref={listRef} data={current?.messages ?? []} keyExtractor={message => message.id} style={styles.messageList}
           contentContainerStyle={[styles.messageContent, !current?.messages.length && styles.emptyContent]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
@@ -250,10 +278,12 @@ function AppContent() {
           renderItem={({ item }) => <View style={[styles.message, item.role === 'user' ? styles.userMessage : styles.assistantMessage]}>
             {item.role === 'assistant' && <Text style={styles.replyLabel}>JAY AI</Text>}
             {item.image && <Image source={{ uri: item.image.uri }} accessibilityLabel={`Generated image: ${item.image.prompt}`} resizeMode="contain" style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: color.soft }} onError={() => setError('This saved image could not be opened. You can generate it again from its description.')} />}
-            {item.role === 'assistant' ? item.content ? <Markdown style={markdownStyles} onLinkPress={url => { if (/^https?:\/\//i.test(url)) void Linking.openURL(url).catch(() => setError('Could not open this link.')); return false; }} rules={{ image: () => null }}>{item.content}</Markdown> : busy && item.id === activeReplyId ? <View style={styles.thinking}><ActivityIndicator size="small" color={color.accent} /><Text style={styles.muted}>{imageMode ? 'Creating image…' : 'Thinking…'}</Text></View> : !item.image ? <View><Text style={styles.muted}>This reply was interrupted or returned empty.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry message" disabled={locked} onPress={() => retryReply(item.id)} style={styles.attachButton}><Text style={styles.toolText}>Retry message</Text></Pressable></View> : null : item.content ? <Text selectable style={styles.userText}>{item.content}</Text> : null}
+            {item.role === 'assistant' ? item.content ? <ReplyBody content={item.content} format={preferences.format} onError={setError} /> : busy && item.id === activeReplyId ? <View style={styles.thinking}><ActivityIndicator size="small" color={color.accent} /><Text style={styles.muted}>{imageMode ? 'Creating image…' : 'Thinking…'}</Text></View> : !item.image ? <View><Text style={styles.muted}>This reply was interrupted or returned empty.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry message" disabled={locked} onPress={() => retryReply(item.id)} style={styles.attachButton}><Text style={styles.toolText}>Retry message</Text></Pressable></View> : null : item.content ? <Text selectable style={styles.userText}>{item.content}</Text> : null}
             {item.attachments?.map(file => <View key={file.id} style={styles.sentFile}><Ionicons name="document-attach-outline" size={17} color={color.accent} /><Text style={styles.sentFileName}>{file.name}</Text></View>)}
+            {!!item.content && item.id !== activeReplyId && <Pressable accessibilityRole="button" accessibilityLabel={item.role === 'assistant' ? 'Copy reply' : 'Copy message'} onPress={() => void copyText(messageText(item))} style={styles.attachButton}><Ionicons name="copy-outline" color={color.accent} size={16} /><Text style={styles.toolText}>Copy</Text></Pressable>}
           </View>} />
         <View style={styles.composerOuter}>
+          {!!notice && <Pressable accessibilityRole="button" accessibilityLabel="Dismiss notice" onPress={() => setNotice('')}><Text accessibilityLiveRegion="polite" style={styles.storageNote}>{notice}</Text></Pressable>}
           {busy && <Pressable accessibilityRole="button" accessibilityLabel="Stop request" onPress={() => requestRef.current?.abort()} style={styles.attachButton}><Ionicons name="stop-circle-outline" color={color.accent} size={22} /><Text style={styles.toolText}>{imageMode ? 'Stop creating image' : 'Stop response'}</Text></Pressable>}
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
             {(['Chat', 'Create image'] as const).map((label, index) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: imageMode === Boolean(index), disabled: locked || (index === 1 && attachments.length > 0) }} disabled={locked || (index === 1 && attachments.length > 0)} onPress={() => { setImageMode(Boolean(index)); setError(null); }} style={[styles.attachButton, imageMode === Boolean(index) && { backgroundColor: color.soft, borderRadius: 12 }, locked && styles.dim]}><Ionicons name={index ? 'color-palette-outline' : 'chatbubble-outline'} size={18} color={color.accent} /><Text style={styles.toolText}>{label}</Text></Pressable>)}
@@ -280,6 +310,22 @@ function AppContent() {
       </KeyboardAvoidingView>
     </View>
     <Modal visible={historyOpen && !wide} transparent animationType="fade" onRequestClose={() => setHistoryOpen(false)}><View style={styles.modalOverlay}><Pressable accessibilityLabel="Close chat history" onPress={() => setHistoryOpen(false)} style={StyleSheet.absoluteFill} /><SafeAreaView style={[styles.historySheet, { width: Math.min(width - 32, 360) }]}>{sidebar()}</SafeAreaView></View></Modal>
+    <Modal visible={optionsOpen} transparent animationType="fade" onRequestClose={() => setOptionsOpen(false)}>
+      <View style={styles.settingsOverlay}><SafeAreaView style={styles.settingsSafe}><ScrollView contentContainerStyle={styles.settingsScroll}><View style={styles.settingsCard}>
+        <View style={styles.sideHeader}><Text style={styles.settingsTitle}>Conversation options</Text><IconButton icon="close" label="Close conversation options" onPress={() => setOptionsOpen(false)} /></View>
+        <Text style={styles.settingsText}>These preferences are remembered for this chat. Your latest written instructions take priority.</Text>
+        <Text style={styles.fieldLabel}>Read images</Text>
+        {([['auto', 'Auto — answer my request'], ['text', 'Just text — transcribe only'], ['full', 'Description + text']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityLabel={label} accessibilityState={{ checked: preferences.imageReading === value }} onPress={() => updatePreferences({ imageReading: value })} style={styles.attachButton}><Text style={styles.toolText}>{preferences.imageReading === value ? '● ' : '○ '}{label}</Text></Pressable>)}
+        <Text style={styles.storageNote}>Transcription preserves readable structure and marks unclear or cropped text. Just text skips answering questions in the image.</Text>
+        <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Reply format</Text>
+        {(['plain', 'markdown'] as const).map(format => <Pressable key={format} accessibilityRole="radio" accessibilityLabel={format === 'plain' ? 'Plain text' : 'Markdown'} accessibilityState={{ checked: preferences.format === format }} onPress={() => updatePreferences({ format })} style={styles.attachButton}><Text style={styles.toolText}>{preferences.format === format ? '● ' : '○ '}{format === 'plain' ? 'Plain text' : 'Markdown'}</Text></Pressable>)}
+        {([['answersOnly', 'Answers only'], ['explanation', 'Optional explanation'], ['related', 'Related suggestions'], ['findSource', 'Find full screenshot source']] as const).map(([key, label]) => <View key={key} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 }}><Text style={[styles.settingsText, { flex: 1, marginBottom: 0 }]}>{label}</Text><Switch accessibilityLabel={label} value={preferences[key]} onValueChange={value => updatePreferences({ [key]: value })} /></View>)}
+        <Text style={styles.storageNote}>Answers only hides optional extras. Source lookup uses public web results when available; unseen text is never treated as visible evidence.</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Copy conversation" onPress={() => { if (current) void copyText(conversationText(current)); setOptionsOpen(false); }} style={[styles.attachButton, { marginTop: 20 }]}><Text style={styles.toolText}>Copy conversation</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Share conversation" onPress={() => { setOptionsOpen(false); void shareConversation(); }} style={styles.attachButton}><Text style={styles.toolText}>Share conversation</Text></Pressable>
+        <Text style={styles.storageNote}>Sharing exports chat text, attachment names and image prompts. Image files are not included.</Text>
+      </View></ScrollView></SafeAreaView></View>
+    </Modal>
     <Modal visible={settingsOpen} transparent animationType="fade" onRequestClose={() => !checking && setSettingsOpen(false)}>
       <KeyboardAvoidingView style={styles.settingsOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <SafeAreaView style={styles.settingsSafe}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.settingsScroll}><View style={styles.settingsCard}>

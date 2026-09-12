@@ -2,6 +2,7 @@ import { fetch } from 'expo/fetch';
 import { File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { Attachment, createEventParser, normalizeApiUrl, validateAttachments } from './chat';
+import type { ReplyOptions } from './preferences';
 
 export function removeGeneratedImage(uri: string) {
   if (Platform.OS === 'web') return;
@@ -49,6 +50,7 @@ export async function checkServer(value: string) {
 export async function streamChat(options: {
   url: string; conversationId: string; message: string; attachments: Attachment[];
   signal: AbortSignal; onDelta: (delta: string) => void;
+  preferences?: ReplyOptions;
 }) {
   validateAttachments(options.attachments);
   const attachments = [];
@@ -61,7 +63,7 @@ export async function streamChat(options: {
   }
   const response = await fetch(`${normalizeApiUrl(options.url, __DEV__)}/api/chat`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ conversationId: options.conversationId, message: options.message, attachments }),
+    body: JSON.stringify({ conversationId: options.conversationId, message: options.message, attachments, preferences: options.preferences }),
     signal: options.signal,
   });
   if (!response.ok) {
