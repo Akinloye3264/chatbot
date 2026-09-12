@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,6 +13,7 @@ import Markdown from 'react-native-markdown-display';
 import { Attachment, attachmentMime, Conversation, MAX_FILES, Message, restoreConversations, validateAttachments } from './src/chat';
 import { checkServer, generateImage, removeGeneratedImage, streamChat } from './src/api';
 import { colors as color, markdownStyles, styles } from './src/styles';
+import { withAbort } from './src/requests';
 
 const DEFAULT_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://chatbot-kr7o.onrender.com';
 const HISTORY_KEY = 'jay-ai:chats:v1';
@@ -27,7 +28,9 @@ function IconButton({ icon, label, onPress, disabled = false }: { icon: IconName
 
 function AppContent() {
   const { width, height, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const wide = width >= 900 && fontScale < 1.6;
+  const chatWidth = Math.max(0, width - insets.left - insets.right - (wide ? 290 : 0));
   const compact = height < 500;
   const [chats, setChats] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState('');
@@ -36,6 +39,7 @@ function AppContent() {
   const [imageMode, setImageMode] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -158,6 +162,7 @@ function AppContent() {
     const text = draft.trim(); const files = attachments; const chatId = current.id;
     const userId = id(); const assistantId = id();
     const controller = new AbortController(); requestRef.current = controller;
+    setActiveReplyId(assistantId);
     setBusy(true); setError(null); setDraft(''); setAttachments([]); followReply.current = true;
     setChats(previous => previous.map(chat => chat.id !== chatId ? chat : {
       ...chat, title: chat.messages.length ? chat.title : (text || files[0].name).slice(0, 48), updatedAt: Date.now(),
@@ -167,19 +172,19 @@ function AppContent() {
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 180000);
     try {
       if (imageMode) {
-        const image = await generateImage(serverUrl, text, assistantId, controller.signal);
+        const image = await withAbort(generateImage(serverUrl, text, assistantId, controller.signal), controller.signal);
         setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: 'Generated image', image } : message) }));
         return;
       }
-      await streamChat({ url: serverUrl, conversationId: chatId, message: text, attachments: files, signal: controller.signal,
-        onDelta: delta => setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: message.content + delta } : message) })),
-      });
+      await withAbort(streamChat({ url: serverUrl, conversationId: chatId, message: text, attachments: files, signal: controller.signal,
+        onDelta: delta => { if (!controller.signal.aborted) setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: message.content + delta } : message) })); },
+      }), controller.signal);
     } catch (caught) {
       // Restore the turn and all files for retry instead of losing the user's draft.
       setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.filter(message => message.id !== userId && message.id !== assistantId) }));
       setDraft(text); setAttachments(files);
       setError(timedOut ? 'The server took too long. Your message and files are ready to retry.' : controller.signal.aborted ? 'Stopped. Your message and files are ready to retry.' : caught instanceof Error ? caught.message : 'Could not connect. Check your connection and try again.');
-    } finally { clearTimeout(timer); requestRef.current = null; setBusy(false); }
+    } finally { clearTimeout(timer); requestRef.current = null; setBusy(false); setActiveReplyId(null); }
   }
 
   async function saveServer() {
@@ -191,6 +196,15 @@ function AppContent() {
       setServerUrl(url); setServerDraft(url); setServerNotice('Connected. Your server is ready.');
     } catch { setServerNotice('Could not connect. Check the URL and try again. A sleeping server may need a moment to wake up.'); }
     finally { setChecking(false); }
+  }
+
+  function retryReply(messageId: string) {
+    if (locked || !current) return;
+    const index = current.messages.findIndex(message => message.id === messageId);
+    const original = current.messages.slice(0, index).reverse().find(message => message.role === 'user');
+    if (!original) return;
+    setDraft(original.content);
+    setError(original.attachments?.length ? 'Please attach the original files again before retrying.' : null);
   }
 
   function sidebar() {
@@ -212,7 +226,7 @@ function AppContent() {
     <StatusBar style="dark" />
     <View style={styles.layout}>
       {wide && <View style={styles.sidebarDesktop}>{sidebar()}</View>}
-      <KeyboardAvoidingView style={styles.main} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={[styles.main, { width: chatWidth, maxWidth: chatWidth }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.header}>
           {!wide && <IconButton icon="menu-outline" label="Open chat history" disabled={locked} onPress={() => setHistoryOpen(true)} />}
           <View style={styles.headerTitle}><Text style={styles.brand}>JAY AI</Text><Text style={styles.headerSubtitle} numberOfLines={1}>{current?.messages.length ? current.title : 'Your everyday thinking companion'}</Text></View>
@@ -236,10 +250,11 @@ function AppContent() {
           renderItem={({ item }) => <View style={[styles.message, item.role === 'user' ? styles.userMessage : styles.assistantMessage]}>
             {item.role === 'assistant' && <Text style={styles.replyLabel}>JAY AI</Text>}
             {item.image && <Image source={{ uri: item.image.uri }} accessibilityLabel={`Generated image: ${item.image.prompt}`} resizeMode="contain" style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: color.soft }} onError={() => setError('This saved image could not be opened. You can generate it again from its description.')} />}
-            {item.role === 'assistant' ? item.content ? <Markdown style={markdownStyles} onLinkPress={url => { if (/^https?:\/\//i.test(url)) void Linking.openURL(url).catch(() => setError('Could not open this link.')); return false; }} rules={{ image: () => null }}>{item.content}</Markdown> : <View style={styles.thinking}><ActivityIndicator size="small" color={color.accent} /><Text style={styles.muted}>Thinking…</Text></View> : item.content ? <Text selectable style={styles.userText}>{item.content}</Text> : null}
+            {item.role === 'assistant' ? item.content ? <Markdown style={markdownStyles} onLinkPress={url => { if (/^https?:\/\//i.test(url)) void Linking.openURL(url).catch(() => setError('Could not open this link.')); return false; }} rules={{ image: () => null }}>{item.content}</Markdown> : busy && item.id === activeReplyId ? <View style={styles.thinking}><ActivityIndicator size="small" color={color.accent} /><Text style={styles.muted}>{imageMode ? 'Creating image…' : 'Thinking…'}</Text></View> : !item.image ? <View><Text style={styles.muted}>This reply was interrupted or returned empty.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry message" disabled={locked} onPress={() => retryReply(item.id)} style={styles.attachButton}><Text style={styles.toolText}>Retry message</Text></Pressable></View> : null : item.content ? <Text selectable style={styles.userText}>{item.content}</Text> : null}
             {item.attachments?.map(file => <View key={file.id} style={styles.sentFile}><Ionicons name="document-attach-outline" size={17} color={color.accent} /><Text style={styles.sentFileName}>{file.name}</Text></View>)}
           </View>} />
         <View style={styles.composerOuter}>
+          {busy && <Pressable accessibilityRole="button" accessibilityLabel="Stop request" onPress={() => requestRef.current?.abort()} style={styles.attachButton}><Ionicons name="stop-circle-outline" color={color.accent} size={22} /><Text style={styles.toolText}>{imageMode ? 'Stop creating image' : 'Stop response'}</Text></Pressable>}
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
             {(['Chat', 'Create image'] as const).map((label, index) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: imageMode === Boolean(index), disabled: locked || (index === 1 && attachments.length > 0) }} disabled={locked || (index === 1 && attachments.length > 0)} onPress={() => { setImageMode(Boolean(index)); setError(null); }} style={[styles.attachButton, imageMode === Boolean(index) && { backgroundColor: color.soft, borderRadius: 12 }, locked && styles.dim]}><Ionicons name={index ? 'color-palette-outline' : 'chatbubble-outline'} size={18} color={color.accent} /><Text style={styles.toolText}>{label}</Text></Pressable>)}
           </View>

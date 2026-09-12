@@ -70,14 +70,22 @@ export async function streamChat(options: {
   }
   if (!response.body) throw new Error('The server did not return a response stream.');
   const reader = response.body.getReader();
+  const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+  options.signal.addEventListener('abort', cancelReader, { once: true });
   const decoder = new TextDecoder();
   let completed = false;
+  let receivedText = false;
   const parser = createEventParser(event => {
     if (event.error) throw new Error(event.error);
-    if (typeof event.delta === 'string') options.onDelta(event.delta);
+    if (options.signal.aborted) throw new Error('Request stopped.');
+    if (typeof event.delta === 'string') {
+      if (event.delta.trim()) receivedText = true;
+      options.onDelta(event.delta);
+    }
     if (event.done) completed = true;
   });
   try {
+    if (options.signal.aborted) throw new Error('Request stopped.');
     while (!completed) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -86,8 +94,10 @@ export async function streamChat(options: {
     parser.push(decoder.decode());
     parser.finish();
     if (!completed) throw new Error('Connection interrupted before the reply finished. Please try again.');
+    if (!receivedText) throw new Error('The server returned an empty reply. Please retry.');
   } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
+    options.signal.removeEventListener('abort', cancelReader);
+    // Cancellation cleanup must not hold the composer locked on a stalled transport.
+    void reader.cancel().catch(() => undefined).finally(() => reader.releaseLock()).catch(() => undefined);
   }
 }

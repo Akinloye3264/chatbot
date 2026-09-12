@@ -1,5 +1,60 @@
 import { expect, test } from '@playwright/test';
 
+test('long URLs and replies keep the composer and Send button on screen', async ({ page }) => {
+  const url = `https://learn.microsoft.com/en-us/azure/security/develop/${'threat-modeling-'.repeat(25)}`;
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.route('**/api/chat', route => route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ delta: `Here is the page: [Microsoft documentation](${url})\n\n${url}` })}\n\ndata: {"done":true}\n\n` }));
+  await page.goto('/');
+  await page.getByLabel('Message', { exact: true }).fill(`${url}\nAccess this link`);
+  const checkSend = async (viewportWidth: number) => {
+    const bounds = await page.getByLabel('Send message', { exact: true }).boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth);
+  };
+  await checkSend(360);
+  await page.getByLabel('Send message', { exact: true }).click();
+  await expect(page.getByText('Microsoft documentation', { exact: true })).toBeVisible();
+  await page.getByLabel('Message', { exact: true }).fill(url);
+  await checkSend(360);
+  await page.setViewportSize({ width: 780, height: 360 });
+  await checkSend(780);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await checkSend(320);
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue(url);
+});
+
+for (const imageMode of [false, true]) {
+  test(`stop restores a stalled ${imageMode ? 'image' : 'chat'} request`, async ({ page }) => {
+    let pending: import('@playwright/test').Route | undefined;
+    await page.route(imageMode ? '**/api/images' : '**/api/chat', route => { pending = route; });
+    await page.goto('/');
+    if (imageMode) await page.getByRole('button', { name: 'Create image', exact: true }).click();
+    await page.getByLabel('Message', { exact: true }).fill('A green garden');
+    await page.getByLabel('Send message', { exact: true }).click();
+    await expect.poll(() => Boolean(pending)).toBe(true);
+    await page.getByLabel('Stop request', { exact: true }).click();
+    await expect(page.getByLabel('Message', { exact: true })).toHaveValue('A green garden');
+    await expect(page.getByLabel('Send message', { exact: true })).toBeEnabled();
+    await expect(page.getByLabel('Stop request', { exact: true })).not.toBeVisible();
+    await pending!.abort().catch(() => undefined);
+  });
+}
+
+test('saved empty replies offer retry instead of an endless spinner', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jay-ai:chats:v1', JSON.stringify([
+    { id: 'saved', title: 'Interrupted', updatedAt: 1, messages: [
+      { id: 'user', role: 'user', content: 'Create a garden image' },
+      { id: 'empty', role: 'assistant', content: '' },
+    ] },
+  ])));
+  await page.goto('/');
+  await expect(page.getByText('This reply was interrupted or returned empty.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Thinking…', { exact: true })).not.toBeVisible();
+  await page.getByLabel('Retry message', { exact: true }).click();
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue('Create a garden image');
+});
+
 test('generated images display, persist, and restore the prompt on quota errors', async ({ page }) => {
   let failing = false;
   const prompt = 'A blue bird';

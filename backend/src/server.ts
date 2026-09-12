@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import pdfParse from 'pdf-parse';
 import Tesseract from 'tesseract.js';
 import { generateImage, imageGenerationConfigured } from './images.js';
+import { attachmentFailure } from './attachment-errors.js';
 
 const backendEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
 config({ path: backendEnvPath });
@@ -229,15 +230,22 @@ app.post('/api/chat', async (request, response) => {
   };
 
   const extractedAttachments: ExtractedAttachment[] = [];
-  try {
-    for (const attachment of attachments) {
+  for (const attachment of attachments) {
+    let empty = false;
+    try {
       const extracted = await extractAttachmentText(attachment, message ?? '', controller.signal);
-      if (!extracted.text) throw new Error('No readable text');
+      if (!extracted.text) { empty = true; throw new Error('Empty extraction'); }
       extractedAttachments.push(extracted);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const vision = attachment.mimeType.startsWith('image/') && visionModel !== 'off';
+      const upstreamStatus = error instanceof OpenAI.APIError ? error.status : undefined;
+      const failure = attachmentFailure(vision, upstreamStatus, error instanceof OpenAI.APIConnectionTimeoutError, empty);
+      // Log diagnostic categories, never uploaded content, API keys or provider error bodies.
+      console.warn('Attachment extraction failed', { stage: vision ? 'vision' : 'file', model: vision ? visionModel : undefined, upstreamStatus, empty, status: failure.status });
+      response.status(failure.status).json({ error: failure.error });
+      return;
     }
-  } catch {
-    if (!controller.signal.aborted) response.status(400).json({ error: 'A file could not be read, contains no extractable text, or image analysis is unavailable. Check the files and try again.' });
-    return;
   }
   const attachmentContext = buildAttachmentContext(extractedAttachments);
   const userPrompt = [message, attachmentContext].filter(Boolean).join('\n\n');
