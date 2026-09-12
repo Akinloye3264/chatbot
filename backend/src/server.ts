@@ -7,6 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pdfParse from 'pdf-parse';
 import Tesseract from 'tesseract.js';
+import { generateImage, imageGenerationConfigured } from './images.js';
 
 const backendEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
 config({ path: backendEnvPath });
@@ -89,8 +90,10 @@ app.use((error: { status?: number }, _request: express.Request, response: expres
 });
 
 app.get('/health', (_request, response) => {
-  response.json({ ok: true, model, configuredKeys: clients.length, visionModel: visionModel === 'off' ? null : visionModel, webAccess: model.startsWith('groq/compound') });
+  response.json({ ok: true, model, configuredKeys: clients.length, visionModel: visionModel === 'off' ? null : visionModel, webAccess: model.startsWith('groq/compound'), imageGeneration: imageGenerationConfigured() });
 });
+
+app.post('/api/images', generateImage);
 
 function dataUrlToBuffer(dataUrl: string): Buffer {
   const commaIndex = dataUrl.indexOf(',');

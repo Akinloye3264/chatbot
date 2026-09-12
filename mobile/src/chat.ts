@@ -3,7 +3,8 @@ export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 
 export type Attachment = { id: string; name: string; mimeType: string; size: number; uri: string };
-export type Message = { id: string; role: 'user' | 'assistant'; content: string; attachments?: Pick<Attachment, 'id' | 'name' | 'mimeType' | 'size'>[]; failed?: boolean };
+export type GeneratedImage = { uri: string; prompt: string };
+export type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: GeneratedImage; attachments?: Pick<Attachment, 'id' | 'name' | 'mimeType' | 'size'>[]; failed?: boolean };
 export type Conversation = { id: string; title: string; messages: Message[]; updatedAt: number };
 export type ChatEvent = { delta?: string; done?: boolean; conversationId?: string; error?: string };
 

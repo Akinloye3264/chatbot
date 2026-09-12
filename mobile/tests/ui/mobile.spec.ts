@@ -1,5 +1,36 @@
 import { expect, test } from '@playwright/test';
 
+test('generated images display, persist, and restore the prompt on quota errors', async ({ page }) => {
+  let failing = false;
+  const prompt = 'A blue bird';
+  const dataUrl = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 32;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#3366ff';
+    context.fillRect(0, 0, 32, 32);
+    return canvas.toDataURL('image/jpeg');
+  });
+  await page.route('**/api/images', async route => {
+    expect(route.request().postDataJSON()).toEqual({ prompt });
+    await route.fulfill({ status: failing ? 429 : 200, contentType: 'application/json', body: JSON.stringify(failing ? { error: 'Image usage limit reached.' } : { image: { dataUrl, prompt } }) });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Create image', exact: true }).click();
+  await page.getByLabel('Message', { exact: true }).fill(prompt);
+  await page.getByLabel('Send message', { exact: true }).click();
+  await expect(page.getByLabel(`Generated image: ${prompt}`, { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('jay-ai:chats:v1'))).toContain('data:image/jpeg;base64,');
+  await page.reload();
+  await expect(page.getByLabel(`Generated image: ${prompt}`, { exact: true })).toBeVisible();
+  failing = true;
+  await page.getByRole('button', { name: 'Create image', exact: true }).click();
+  await page.getByLabel('Message', { exact: true }).fill(prompt);
+  await page.getByLabel('Send message', { exact: true }).click();
+  await expect(page.getByText('Image usage limit reached.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue(prompt);
+});
+
 for (const [name, width, height] of [['small-phone', 320, 568], ['phone', 390, 844], ['landscape-phone', 844, 390], ['tablet', 1024, 768]] as const) {
   test(`layout fits ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height });

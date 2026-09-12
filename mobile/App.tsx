@@ -11,7 +11,7 @@ import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import Markdown from 'react-native-markdown-display';
 import { Attachment, attachmentMime, Conversation, MAX_FILES, Message, restoreConversations, validateAttachments } from './src/chat';
-import { checkServer, streamChat } from './src/api';
+import { checkServer, generateImage, removeGeneratedImage, streamChat } from './src/api';
 import { colors as color, markdownStyles, styles } from './src/styles';
 
 const DEFAULT_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://chatbot-kr7o.onrender.com';
@@ -33,6 +33,7 @@ function AppContent() {
   const [activeId, setActiveId] = useState('');
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
+  const [imageMode, setImageMode] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -76,12 +77,14 @@ function AppContent() {
 
   function startChat() {
     if (locked) return;
+    setImageMode(false);
     const chat = newConversation();
     setChats(previous => [chat, ...previous]); setActiveId(chat.id);
     setDraft(''); setAttachments([]); setError(null); setHistoryOpen(false); followReply.current = true;
   }
   function selectChat(chat: Conversation) {
     if (locked) return;
+    setImageMode(false);
     setActiveId(chat.id); setDraft(''); setAttachments([]); setError(null); setHistoryOpen(false); followReply.current = true;
   }
   function deleteChat(chat: Conversation) {
@@ -89,6 +92,12 @@ function AppContent() {
     Alert.alert('Delete this chat?', 'This removes the saved conversation from this device.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => {
+        for (const message of chat.messages) {
+          if (message.image) {
+            try { removeGeneratedImage(message.image.uri); }
+            catch { setError('The chat was deleted, but an image file could not be removed from device storage.'); }
+          }
+        }
         const remaining = chats.filter(item => item.id !== chat.id);
         if (!remaining.length) remaining.push(newConversation());
         setChats(remaining);
@@ -99,6 +108,7 @@ function AppContent() {
 
   async function pickFiles(source: 'files' | 'photos' | 'camera') {
     if (requestRef.current || pickingRef.current) return;
+    if (imageMode) { setError('Switch to Chat to attach files. Create image uses a text description.'); return; }
     if (attachments.length >= MAX_FILES) { setError('You can attach up to 10 files per message.'); return; }
     pickingRef.current = true; setPicking(true); setError(null);
     try {
@@ -142,6 +152,9 @@ function AppContent() {
 
   async function send() {
     if (requestRef.current || pickingRef.current || !current || (!draft.trim() && !attachments.length)) return;
+    if (imageMode && (!draft.trim() || draft.trim().length > 2048 || attachments.length)) {
+      setError('Describe your image using 1–2048 characters, without attachments.'); return;
+    }
     const text = draft.trim(); const files = attachments; const chatId = current.id;
     const userId = id(); const assistantId = id();
     const controller = new AbortController(); requestRef.current = controller;
@@ -153,6 +166,11 @@ function AppContent() {
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 180000);
     try {
+      if (imageMode) {
+        const image = await generateImage(serverUrl, text, assistantId, controller.signal);
+        setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: 'Generated image', image } : message) }));
+        return;
+      }
       await streamChat({ url: serverUrl, conversationId: chatId, message: text, attachments: files, signal: controller.signal,
         onDelta: delta => setChats(previous => previous.map(chat => chat.id !== chatId ? chat : { ...chat, messages: chat.messages.map(message => message.id === assistantId ? { ...message, content: message.content + delta } : message) })),
       });
@@ -217,10 +235,15 @@ function AppContent() {
           </View>}
           renderItem={({ item }) => <View style={[styles.message, item.role === 'user' ? styles.userMessage : styles.assistantMessage]}>
             {item.role === 'assistant' && <Text style={styles.replyLabel}>JAY AI</Text>}
+            {item.image && <Image source={{ uri: item.image.uri }} accessibilityLabel={`Generated image: ${item.image.prompt}`} resizeMode="contain" style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: color.soft }} onError={() => setError('This saved image could not be opened. You can generate it again from its description.')} />}
             {item.role === 'assistant' ? item.content ? <Markdown style={markdownStyles} onLinkPress={url => { if (/^https?:\/\//i.test(url)) void Linking.openURL(url).catch(() => setError('Could not open this link.')); return false; }} rules={{ image: () => null }}>{item.content}</Markdown> : <View style={styles.thinking}><ActivityIndicator size="small" color={color.accent} /><Text style={styles.muted}>Thinking…</Text></View> : item.content ? <Text selectable style={styles.userText}>{item.content}</Text> : null}
             {item.attachments?.map(file => <View key={file.id} style={styles.sentFile}><Ionicons name="document-attach-outline" size={17} color={color.accent} /><Text style={styles.sentFileName}>{file.name}</Text></View>)}
           </View>} />
         <View style={styles.composerOuter}>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+            {(['Chat', 'Create image'] as const).map((label, index) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: imageMode === Boolean(index), disabled: locked || (index === 1 && attachments.length > 0) }} disabled={locked || (index === 1 && attachments.length > 0)} onPress={() => { setImageMode(Boolean(index)); setError(null); }} style={[styles.attachButton, imageMode === Boolean(index) && { backgroundColor: color.soft, borderRadius: 12 }, locked && styles.dim]}><Ionicons name={index ? 'color-palette-outline' : 'chatbubble-outline'} size={18} color={color.accent} /><Text style={styles.toolText}>{label}</Text></Pressable>)}
+          </View>
+          {imageMode && <Text style={styles.storageNote}>Describe an image to create. Up to 2,048 characters.</Text>}
           {error && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error}</Text><IconButton icon="close" label="Dismiss message" onPress={() => setError(null)} /></View>}
           {attachments.length > 0 && <ScrollView horizontal style={styles.pendingList} contentContainerStyle={{ gap: 8 }} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">{attachments.map(file => <View key={file.id} style={styles.pendingFile}>
             {file.mimeType.startsWith('image/') ? <Image source={{ uri: file.uri }} style={styles.thumbnail} /> : <Ionicons name="document-text-outline" color={color.accent} size={23} />}

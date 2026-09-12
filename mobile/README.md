@@ -1,5 +1,13 @@
 # JAY AI mobile
 
+## Image generation
+
+Select **Create image** above the composer, describe the image (up to 2,048 characters), and send. Select **Chat** to return to questions and file uploads. This mode creates images from text; it does not edit attached photos. Generated images are saved in the app's document storage on phones and their references are kept in chat history. The browser preview stores image data in browser storage.
+
+The backend needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (with Workers AI access) in `backend/.env` locally, or in the Render service environment. Never put these credentials in mobile `EXPO_PUBLIC_*` variables. The backend calls Cloudflare's FLUX.1 Schnell model with four steps through `POST /api/images`. `/health` reports `imageGeneration: true` when both variables are present; this flag does not verify token permissions or quota.
+
+Deploy the updated backend and rebuild/reload the mobile app to use this feature. Quota, configuration, and service failures restore the prompt for retry. Run `npm test --workspace backend` at the repository root for mocked endpoint tests, and `npm run test:ui` in `mobile` for image display, persistence, and retry coverage. A real phone generation remains necessary to verify native file storage and production credentials.
+
 A native React Native / Expo app for Android and iOS, connected to `https://chatbot-kr7o.onrender.com`. This is a separate app, not a WebView wrapper. Its dependencies are isolated from the existing React web frontend.
 
 ## Included

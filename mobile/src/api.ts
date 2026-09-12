@@ -1,6 +1,38 @@
 import { fetch } from 'expo/fetch';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 import { Attachment, createEventParser, normalizeApiUrl, validateAttachments } from './chat';
+
+export function removeGeneratedImage(uri: string) {
+  if (Platform.OS === 'web') return;
+  // Only remove files created by this feature inside this app's document directory.
+  const prefix = `${Paths.document.uri.replace(/\/$/, '')}/generated-`;
+  if (!uri.startsWith(prefix) || !/^[\w-]+\.jpg$/.test(uri.slice(prefix.length))) return;
+  const file = new File(uri);
+  if (file.exists) file.delete();
+}
+
+export async function generateImage(url: string, prompt: string, imageId: string, signal: AbortSignal) {
+  const response = await fetch(`${normalizeApiUrl(url, __DEV__)}/api/images`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }), signal,
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? (response.status === 404 ? 'Deploy the updated backend to enable image generation.' : 'Image generation failed. Please retry.'));
+  const dataUrl = body?.image?.dataUrl;
+  if (typeof dataUrl !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl)) throw new Error('The server returned an unreadable image.');
+  if (signal.aborted) throw new Error('Request stopped.');
+  // Keep large image bytes out of native AsyncStorage; persist a document URI instead.
+  if (Platform.OS === 'web') return { uri: dataUrl, prompt };
+  const file = new File(Paths.document, `generated-${imageId}.jpg`);
+  try {
+    file.write(Uint8Array.from(atob(dataUrl.split(',')[1]), character => character.charCodeAt(0)));
+  } catch {
+    if (file.exists) file.delete();
+    throw new Error('The image could not be saved. Free some device storage and retry.');
+  }
+  return { uri: file.uri, prompt };
+}
 
 export async function checkServer(value: string) {
   const url = normalizeApiUrl(value, __DEV__);
