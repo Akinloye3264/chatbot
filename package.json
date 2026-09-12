@@ -9,7 +9,10 @@
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
     "build": "npm run build --workspace backend && npm run build --workspace frontend",
-    "check": "npm run check --workspace backend && npm run check --workspace frontend"
+    "check": "npm run check --workspace backend && npm run check --workspace frontend",
+    "mobile": "npm --prefix mobile start",
+    "check:mobile": "npm --prefix mobile run check",
+    "test:mobile": "npm --prefix mobile test"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

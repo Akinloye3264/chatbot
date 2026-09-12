@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "JAY AI",
+    "slug": "jay-ai",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/jay-icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.akinloye.jayai",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#385A46",
+        "foregroundImage": "./assets/jay-foreground.png",
+        "monochromeImage": "./assets/jay-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.akinloye.jayai",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "web": {
+      "favicon": "./assets/jay-favicon.png"
+    },
+    "scheme": "jayai",
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow JAY AI to attach the photos you choose to your conversation.",
+          "cameraPermission": "Allow JAY AI to take a photo to attach to your conversation.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-document-picker"
+    ]
+  }
+}

@@ -5,3 +5,4 @@ frontend/dist
 frontend/node_modules
 backend/node_modules
 package-lock.json
+!mobile/package-lock.json

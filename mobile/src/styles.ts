@@ -1,0 +1,35 @@
+import { StyleSheet } from 'react-native';
+
+export const colors = { ink: '#252923', muted: '#6D7369', paper: '#F8F7F3', white: '#FFFFFF', line: '#E4E6DE', accent: '#385A46', soft: '#EAF0E8', red: '#A23732' };
+const c = colors;
+export const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.paper }, layout: { flex: 1, flexDirection: 'row' }, main: { flex: 1, minWidth: 0 },
+  loading: { flex: 1, backgroundColor: c.paper, alignItems: 'center', justifyContent: 'center', gap: 14 }, muted: { color: c.muted, fontSize: 15 }, dim: { opacity: 0.45 },
+  iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  header: { minHeight: 76, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: c.line, gap: 4 },
+  headerTitle: { flex: 1, minWidth: 0, paddingLeft: 4 }, brand: { color: c.ink, fontSize: 19, fontWeight: '700', letterSpacing: 1.5 }, headerSubtitle: { color: c.muted, fontSize: 12, marginTop: 4 },
+  messageList: { flex: 1 }, messageContent: { padding: 20, paddingBottom: 28, width: '100%', maxWidth: 820, alignSelf: 'center', gap: 22 }, emptyContent: { flexGrow: 1, justifyContent: 'center' },
+  welcome: { width: '100%', maxWidth: 470, alignSelf: 'center', paddingVertical: 28 }, welcomeMark: { width: 66, height: 66, borderRadius: 23, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center', marginBottom: 26 },
+  welcomeTitle: { color: c.ink, fontSize: 35, lineHeight: 43, fontWeight: '500', letterSpacing: -1.2 }, welcomeText: { color: c.muted, fontSize: 16, lineHeight: 25, marginTop: 14 },
+  suggestions: { gap: 9, marginTop: 30 }, suggestion: { borderWidth: 1, borderColor: c.line, backgroundColor: c.white, padding: 15, minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }, suggestionText: { flex: 1, fontSize: 14, color: c.ink },
+  message: { maxWidth: '100%' }, userMessage: { alignSelf: 'flex-end', backgroundColor: c.soft, paddingHorizontal: 18, paddingVertical: 14, borderRadius: 21, borderBottomRightRadius: 5 }, assistantMessage: { alignSelf: 'stretch', paddingHorizontal: 2 },
+  userText: { fontSize: 16, lineHeight: 25, color: c.ink }, replyLabel: { fontSize: 11, letterSpacing: 1.3, fontWeight: '700', color: c.accent, marginBottom: 8 }, thinking: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 10 },
+  sentFile: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 8 }, sentFileName: { flexShrink: 1, color: c.accent, fontSize: 13 },
+  composerOuter: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 8, width: '100%', maxWidth: 820, alignSelf: 'center' }, composer: { backgroundColor: c.white, borderRadius: 23, borderWidth: 1, borderColor: '#D8DDD2', padding: 11 },
+  input: { color: c.ink, fontSize: 16, lineHeight: 23, minHeight: 46, padding: 8 }, composerTools: { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'wrap' }, attachButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }, toolText: { fontSize: 13, color: c.accent },
+  send: { minWidth: 44, minHeight: 44, borderRadius: 16, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }, composerHint: { color: c.muted, textAlign: 'center', fontSize: 10, marginTop: 8 },
+  error: { backgroundColor: '#FCEEEA', borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingLeft: 12, marginBottom: 8 }, errorText: { color: c.red, flex: 1, fontSize: 13, lineHeight: 19 },
+  pendingList: { maxHeight: 74, marginBottom: 10 }, pendingFile: { backgroundColor: c.soft, borderRadius: 14, paddingLeft: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 250 }, thumbnail: { width: 38, height: 38, borderRadius: 8 }, fileName: { maxWidth: 130, fontSize: 12, fontWeight: '500', color: c.ink }, fileSize: { fontSize: 10, color: c.muted, marginTop: 3 },
+  sidebarDesktop: { width: 290, borderRightWidth: 1, borderColor: c.line }, sidebar: { flex: 1, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 20, backgroundColor: '#F0F1EB' }, sideHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  newChat: { flexDirection: 'row', gap: 10, alignItems: 'center', minHeight: 50, padding: 13, borderRadius: 14, backgroundColor: c.white, borderWidth: 1, borderColor: c.line }, newChatText: { color: c.accent, fontWeight: '600', fontSize: 14, flexShrink: 1 }, sectionLabel: { fontSize: 10, color: c.muted, letterSpacing: 1.3, marginTop: 30, marginBottom: 14 },
+  chatRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 13 }, chatRowActive: { backgroundColor: '#E1E7DC' }, chatSelect: { padding: 12, flex: 1, minHeight: 55 }, chatTitle: { color: c.ink, fontSize: 14 }, chatDate: { color: c.muted, fontSize: 10, marginTop: 5 }, sidebarNote: { color: c.accent, fontSize: 13, marginTop: 16 }, storageNote: { color: c.muted, fontSize: 12, lineHeight: 19, marginTop: 10 },
+  modalOverlay: { flex: 1, backgroundColor: '#00000055' }, historySheet: { flex: 1, backgroundColor: '#F0F1EB' }, settingsOverlay: { flex: 1, backgroundColor: '#00000055' }, settingsSafe: { flex: 1 }, settingsScroll: { flexGrow: 1, justifyContent: 'center', padding: 20 }, settingsCard: { width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: c.paper, borderRadius: 24, padding: 22 }, settingsTitle: { fontSize: 23, color: c.ink, fontWeight: '600' }, settingsText: { fontSize: 14, lineHeight: 22, color: c.muted, marginBottom: 16 }, fieldLabel: { fontSize: 12, fontWeight: '600', color: c.ink, marginBottom: 8 }, serverInput: { backgroundColor: c.white, color: c.ink, borderWidth: 1, borderColor: c.line, borderRadius: 12, padding: 13, minHeight: 48 }, connect: { backgroundColor: c.accent, minHeight: 50, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginVertical: 18, paddingHorizontal: 12 }, connectText: { color: c.white, fontWeight: '600', fontSize: 14 },
+});
+
+export const markdownStyles = StyleSheet.create({
+  body: { color: c.ink, fontSize: 16, lineHeight: 26 }, paragraph: { marginTop: 0, marginBottom: 12 },
+  heading1: { fontSize: 24, lineHeight: 32, fontWeight: '600', marginTop: 12, marginBottom: 10 }, heading2: { fontSize: 21, lineHeight: 29, fontWeight: '600', marginTop: 10, marginBottom: 8 }, heading3: { fontSize: 18, fontWeight: '600', marginVertical: 8 },
+  strong: { fontWeight: '700' }, link: { color: c.accent, textDecorationLine: 'underline' },
+  fence: { backgroundColor: '#ECEFE7', borderColor: c.line, borderRadius: 10, padding: 12, fontSize: 13, lineHeight: 21, color: c.ink }, code_inline: { backgroundColor: c.soft, fontSize: 14, color: c.ink },
+  blockquote: { backgroundColor: c.soft, borderLeftColor: c.accent, borderLeftWidth: 3, paddingHorizontal: 12 }, table: { borderColor: c.line }, tr: { borderColor: c.line },
+});

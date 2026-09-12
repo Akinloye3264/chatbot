@@ -1,4 +1,6 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type ChatAttachment = {
   id: string;
@@ -545,7 +547,12 @@ export default function App() {
         <div ref={listRef} className="messages" aria-live="polite">
           {messages.map((message) => (
             <article key={message.id} className={`bubble bubble-${message.role}`}>
-              <p>{message.content}</p>
+              {message.role === 'assistant' ? (
+                <div className="formatted-response"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                  img: () => null,
+                }}>{message.content}</ReactMarkdown></div>
+              ) : <p>{message.content}</p>}
               {message.attachments?.length ? (
                 <div className="attachment-grid">
                   {message.attachments.map((attachment) => (

@@ -641,6 +641,18 @@ textarea::placeholder {
    Responsive: very small phones
 ══════════════════════════════ */
 
+.formatted-response { overflow-wrap: anywhere; }
+.formatted-response p { white-space: normal; margin: 0 0 0.75em; }
+.formatted-response > :last-child { margin-bottom: 0; }
+.formatted-response h1, .formatted-response h2, .formatted-response h3 { font-size: 1.15em; line-height: 1.4; margin: 1em 0 0.5em; }
+.formatted-response ul, .formatted-response ol { padding-left: 1.5em; }
+.formatted-response li { margin: 0.35em 0; }
+.formatted-response pre { max-width: 100%; overflow-x: auto; white-space: pre; padding: 12px; border-radius: 10px; background: rgba(127,127,127,0.12); }
+.formatted-response code { font-family: monospace; font-size: 0.9em; }
+.formatted-response a { color: inherit; text-decoration: underline; }
+.formatted-response table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.formatted-response th, .formatted-response td { padding: 8px; border: 1px solid rgba(127,127,127,0.3); }
+
 @media (max-width: 380px) {
   .chat-header {
     padding: 8px 10px;
